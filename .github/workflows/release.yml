@@ -58,6 +58,40 @@ jobs:
           done
           echo "Both packages are at $TAG"
 
+      # npm answers an unauthorised publish with 404 rather than 403, so a
+      # missing token and a token without scope access look identical at the
+      # point of failure. Separate them here, before anything is uploaded.
+      - name: Verify npm credentials and scope access
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::The NPM_TOKEN secret is empty or not visible to this job."
+            echo "Add it under Settings -> Secrets and variables -> Actions, or as an"
+            echo "environment secret on the 'release' environment."
+            exit 1
+          fi
+          echo "Token length: ${#NODE_AUTH_TOKEN} characters"
+
+          if ! WHO=$(npm whoami 2>&1); then
+            echo "::error::npm rejected the token: ${WHO}"
+            echo "The token is invalid, revoked, expired, or restricted by an IP allow-list."
+            exit 1
+          fi
+          echo "Authenticated as: ${WHO}"
+
+          echo "Organisations this token can see:"
+          npm org ls e-pay 2>&1 || {
+            echo "::error::This token cannot read the 'e-pay' organisation."
+            echo "Regenerate it as a Granular Access Token with:"
+            echo "  - Packages and scopes: Read and write"
+            echo "  - Scope selection: the @e-pay scope (not 'only select packages',"
+            echo "    which cannot cover a package that does not exist yet)"
+            echo "  - Allowed IP ranges: empty, since runners have dynamic addresses"
+            exit 1
+          }
+
       # @e-pay/nestjs depends on @e-pay/node, so the core must land first.
       - name: Publish @e-pay/node
         if: ${{ !inputs.dry_run }}
