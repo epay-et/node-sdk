@@ -1,0 +1,5 @@
+# Build output and lockfiles.
+dist/
+node_modules/
+pnpm-lock.yaml
+.turbo/

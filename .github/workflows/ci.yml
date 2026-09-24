@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 and 20 are the oldest supported runtimes; 24 is what the test
+        # runner needs, since the suites are TypeScript executed directly.
+        node: [20, 22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Type-check
+        run: pnpm check-types
+
+      # Node's test runner executes the .ts suites via type stripping, which
+      # needs 22.6+. Older runtimes still build and type-check above, proving
+      # the published output compiles for them.
+      - name: Test
+        if: matrix.node >= 22
+        run: pnpm test
+
+  # The VERSION constant rides in the User-Agent, so it must not drift from the
+  # manifest that npm actually publishes.
+  versions:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: package.json matches src/version.ts
+        run: |
+          MANIFEST=$(node -p "require('./packages/node/package.json').version")
+          CONSTANT=$(node -p "
+            require('fs').readFileSync('packages/node/src/version.ts','utf8')
+              .match(/VERSION\s*=\s*[\x27\x22]([^\x27\x22]+)/)[1]
+          ")
+          echo "manifest=$MANIFEST constant=$CONSTANT"
+          [ "$MANIFEST" = "$CONSTANT" ] || {
+            echo "::error::packages/node/src/version.ts says $CONSTANT but package.json says $MANIFEST"
+            exit 1
+          }
+          NEST=$(node -p "require('./packages/nestjs/package.json').version")
+          [ "$NEST" = "$MANIFEST" ] || {
+            echo "::error::@e-pay/nestjs is $NEST but @e-pay/node is $MANIFEST; they release together"
+            exit 1
+          }
+
+  lint:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+
+  # Proves the published tarballs are importable from both module systems,
+  # which the in-repo suites cannot catch on their own.
+  package:
+    name: Package smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Pack both packages
+        run: |
+          pnpm --filter @e-pay/node exec npm pack --pack-destination "$RUNNER_TEMP"
+          pnpm --filter @e-pay/nestjs exec npm pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Install the tarball into a clean project and import it
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer" && cd "$RUNNER_TEMP/consumer"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/e-pay-node-*.tgz > /dev/null
+
+          node -e "
+            const { Epay } = require('@e-pay/node');
+            if (new Epay({ apiKey: 'sk_test_x0123456789' }).mode !== 'sandbox') process.exit(1);
+            console.log('CJS require: ok');
+          "
+          node --input-type=module -e "
+            import { Epay } from '@e-pay/node';
+            if (new Epay({ apiKey: 'sk_test_x0123456789' }).mode !== 'sandbox') process.exit(1);
+            console.log('ESM import: ok');
+          "
+          node -e "
+            require('@e-pay/node/express'); require('@e-pay/node/fetch'); require('@e-pay/node/webhooks/web');
+            console.log('subpath exports: ok');
+          "

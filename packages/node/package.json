@@ -1,0 +1,90 @@
+{
+  "name": "@e-pay/node",
+  "version": "0.1.0",
+  "description": "Official ePay Business API client for Node.js, Bun, and Deno.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "keywords": [
+    "epay",
+    "payments",
+    "ethiopia",
+    "telebirr",
+    "cbe",
+    "payment-gateway"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./express": {
+      "import": {
+        "types": "./dist/esm/middleware/express.d.ts",
+        "default": "./dist/esm/middleware/express.js"
+      },
+      "require": {
+        "types": "./dist/cjs/middleware/express.d.ts",
+        "default": "./dist/cjs/middleware/express.js"
+      }
+    },
+    "./fetch": {
+      "import": {
+        "types": "./dist/esm/middleware/fetch.d.ts",
+        "default": "./dist/esm/middleware/fetch.js"
+      },
+      "require": {
+        "types": "./dist/cjs/middleware/fetch.d.ts",
+        "default": "./dist/cjs/middleware/fetch.js"
+      }
+    },
+    "./webhooks/web": {
+      "import": {
+        "types": "./dist/esm/webhooks-web.d.ts",
+        "default": "./dist/esm/webhooks-web.js"
+      },
+      "require": {
+        "types": "./dist/cjs/webhooks-web.d.ts",
+        "default": "./dist/cjs/webhooks-web.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check-types": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/epay-et/node-sdk.git",
+    "directory": "packages/node"
+  },
+  "homepage": "https://github.com/epay-et/node-sdk/tree/main/packages/node#readme",
+  "bugs": {
+    "url": "https://github.com/epay-et/node-sdk/issues"
+  },
+  "author": "ePay"
+}

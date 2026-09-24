@@ -1,0 +1,73 @@
+{
+  "name": "@e-pay/nestjs",
+  "version": "0.1.0",
+  "description": "Official ePay Business API module for NestJS.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "epay",
+    "nestjs",
+    "payments",
+    "ethiopia",
+    "telebirr",
+    "payment-gateway"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check-types": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@e-pay/node": "workspace:^"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "reflect-metadata": "^0.1.13 || ^0.2.0",
+    "rxjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@types/node": "^24.10.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typescript": "7.0.2",
+    "@nestjs/testing": "^11.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/epay-et/node-sdk.git",
+    "directory": "packages/nestjs"
+  },
+  "homepage": "https://github.com/epay-et/node-sdk/tree/main/packages/nestjs#readme",
+  "bugs": {
+    "url": "https://github.com/epay-et/node-sdk/issues"
+  },
+  "author": "ePay"
+}

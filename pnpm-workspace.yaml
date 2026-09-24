@@ -1,0 +1,7 @@
+packages:
+  - "packages/*"
+
+# esbuild ships a platform binary via a postinstall script. It is only used by
+# the TypeScript toolchain, never at runtime in a published package.
+onlyBuiltDependencies:
+  - esbuild

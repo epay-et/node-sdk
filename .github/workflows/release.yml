@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and validate without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # Required for npm provenance, which attests that these artifacts were
+      # built by this workflow from this commit. Needs a public repository.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build, type-check and test
+        run: |
+          pnpm build
+          pnpm check-types
+          pnpm test
+
+      # A tag that disagrees with package.json would publish the wrong version
+      # under the right tag, which is not something you can undo on npm.
+      - name: Verify the tag matches both package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          for pkg in node nestjs; do
+            VERSION=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$VERSION" != "$TAG" ]; then
+              echo "::error::packages/$pkg is $VERSION but the tag is $TAG"
+              exit 1
+            fi
+          done
+          echo "Both packages are at $TAG"
+
+      # @e-pay/nestjs depends on @e-pay/node, so the core must land first.
+      - name: Publish @e-pay/node
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public --provenance
+        working-directory: packages/node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @e-pay/nestjs
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public --provenance
+        working-directory: packages/nestjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry run
+        if: ${{ inputs.dry_run }}
+        run: |
+          (cd packages/node && npm publish --access public --dry-run)
+          (cd packages/nestjs && npm publish --access public --dry-run)
