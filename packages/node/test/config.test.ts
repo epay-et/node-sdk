@@ -49,10 +49,10 @@ test("options fall back to environment variables", () => {
   const saved = { ...process.env };
   try {
     process.env.EPAY_SECRET_KEY = "sk_test_from_env";
-    process.env.EPAY_BASE_URL = "https://staging.e-pay.et/v1";
+    process.env.EPAY_BASE_URL = "https://staging.epayethiopia.com/v1";
     const client = new Epay();
     assert.equal(client.mode, "sandbox");
-    assert.equal(client.baseUrl, "https://staging.e-pay.et/v1");
+    assert.equal(client.baseUrl, "https://staging.epayethiopia.com/v1");
   } finally {
     process.env = saved;
   }
@@ -61,9 +61,9 @@ test("options fall back to environment variables", () => {
 test("a trailing slash on baseUrl does not double up in request URLs", () => {
   const client = new Epay({
     apiKey: "sk_test_a",
-    baseUrl: "https://api.e-pay.et/v1/",
+    baseUrl: "https://api.epayethiopia.com/v1/",
   });
-  assert.equal(client.baseUrl, "https://api.e-pay.et/v1");
+  assert.equal(client.baseUrl, "https://api.epayethiopia.com/v1");
 });
 
 test("baseUrl defaults to the documented API root", () => {
@@ -71,7 +71,7 @@ test("baseUrl defaults to the documented API root", () => {
   delete process.env.EPAY_BASE_URL;
   try {
     assert.equal(new Epay({ apiKey: "sk_test_a" }).baseUrl, DEFAULT_BASE_URL);
-    assert.equal(DEFAULT_BASE_URL, "https://api.e-pay.et/v1");
+    assert.equal(DEFAULT_BASE_URL, "https://api.epayethiopia.com/v1");
   } finally {
     if (saved !== undefined) process.env.EPAY_BASE_URL = saved;
   }

@@ -1,6 +1,6 @@
 {
   "name": "@e-pay/node",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official ePay Business API client for Node.js, Bun, and Deno.",
   "license": "MIT",
   "type": "module",

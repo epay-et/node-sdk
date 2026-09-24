@@ -34,7 +34,7 @@ function client(
 
 const SESSION = {
   reference: "PAB12CD3420260813",
-  checkoutUrl: "https://checkout.e-pay.et/pay/PAB12CD3420260813",
+  checkoutUrl: "https://checkout.epayethiopia.com/pay/PAB12CD3420260813",
   status: "success",
   expiresAt: "2026-08-13T12:30:00.000Z",
 };
@@ -56,7 +56,7 @@ test("initialize posts to the documented path with auth and JSON headers", async
   assert.equal(calls[0]!.method, "POST");
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/transactions/initialize",
+    "https://api.epayethiopia.com/v1/transactions/initialize",
   );
   assert.equal(calls[0]!.headers.Authorization, `Bearer ${API_KEY}`);
   assert.equal(calls[0]!.headers["Content-Type"], "application/json");
@@ -205,7 +205,7 @@ test("verify hits the verify path and returns the receipt", async () => {
   assert.equal(calls[0]!.method, "GET");
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/transactions/PAB12CD3420260813/verify",
+    "https://api.epayethiopia.com/v1/transactions/PAB12CD3420260813/verify",
   );
   assert.equal(result.serviceFee, "7.50");
   assert.equal(result.customer.name, "Abebe Bikila");
@@ -241,7 +241,7 @@ test("cancel resolves on 204 with no body", async () => {
   assert.equal(calls[0]!.method, "POST");
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/transactions/PAB12CD3420260813/cancel",
+    "https://api.epayethiopia.com/v1/transactions/PAB12CD3420260813/cancel",
   );
   assert.equal(calls[0]!.body, undefined);
 });
@@ -264,7 +264,7 @@ test("references are URL-encoded rather than interpolated raw", async () => {
   await epay.transactions.retrieve("PAB 1/2");
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/transactions/PAB%201%2F2",
+    "https://api.epayethiopia.com/v1/transactions/PAB%201%2F2",
   );
 });
 
@@ -481,7 +481,7 @@ test("timeline returns events in order, with error details on failures", async (
 
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/transactions/PFF98AB1220260812/timeline",
+    "https://api.epayethiopia.com/v1/transactions/PFF98AB1220260812/timeline",
   );
   assert.equal(timeline.events.length, 2);
   assert.equal(timeline.events[1]!.errorCode, "INSUFFICIENT_FUNDS");
@@ -506,7 +506,10 @@ test("payment providers are unwrapped from the data envelope", async () => {
 
   const providers = await epay.paymentProviders.list();
 
-  assert.equal(calls[0]!.url, "https://api.e-pay.et/v1/payment-providers/list");
+  assert.equal(
+    calls[0]!.url,
+    "https://api.epayethiopia.com/v1/payment-providers/list",
+  );
   assert.equal(providers[0]!.providerCode, "telebirr");
 });
 
@@ -536,7 +539,10 @@ test("listEnabled filters out providers the account cannot use", async () => {
 
   const enabled = await epay.paymentProviders.listEnabled();
 
-  assert.equal(calls[0]!.url, "https://api.e-pay.et/v1/payment-providers");
+  assert.equal(
+    calls[0]!.url,
+    "https://api.epayethiopia.com/v1/payment-providers",
+  );
   assert.deepEqual(
     enabled.map((p) => p.providerCode),
     ["cbe_birr"],
@@ -702,7 +708,7 @@ test("the escape hatch reaches unmodelled endpoints with the same handling", asy
   assert.equal(response.headers["x-request-id"], "req_9");
   assert.equal(
     calls[0]!.url,
-    "https://api.e-pay.et/v1/some/future/endpoint?flag=true",
+    "https://api.epayethiopia.com/v1/some/future/endpoint?flag=true",
   );
 });
 

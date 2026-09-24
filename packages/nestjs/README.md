@@ -1,6 +1,8 @@
 # @e-pay/nestjs
 
-Official [ePay Business API](https://api.e-pay.et) module for NestJS.
+Official ePay Business API module for NestJS.
+
+Full API documentation: <https://docs.epayethiopia.com/>
 
 A thin, idiomatic Nest wrapper around [`@e-pay/node`](../node): a dynamic module,
 an injectable service, a webhook guard, and a param decorator.

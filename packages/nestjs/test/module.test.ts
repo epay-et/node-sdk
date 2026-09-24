@@ -279,7 +279,7 @@ test("the client honours a mock transport injected through module options", asyn
       return new Response(
         JSON.stringify({
           reference: "PAB1",
-          checkoutUrl: "https://checkout.e-pay.et/pay/PAB1",
+          checkoutUrl: "https://checkout.epayethiopia.com/pay/PAB1",
           status: "success",
           expiresAt: "2026-08-13T12:30:00.000Z",
         }),
@@ -295,7 +295,9 @@ test("the client honours a mock transport injected through module options", asyn
   });
 
   assert.equal(session.reference, "PAB1");
-  assert.deepEqual(calls, ["https://api.e-pay.et/v1/transactions/initialize"]);
+  assert.deepEqual(calls, [
+    "https://api.epayethiopia.com/v1/transactions/initialize",
+  ]);
 
   await moduleRef.close();
 });

@@ -4,7 +4,7 @@ import { EpayConfigError } from "./errors.js";
 import type { EpayMode } from "./types.js";
 
 /** Default API root. */
-export const DEFAULT_BASE_URL = "https://api.e-pay.et/v1";
+export const DEFAULT_BASE_URL = "https://api.epayethiopia.com/v1";
 
 /** Default per-request timeout in milliseconds. */
 export const DEFAULT_TIMEOUT_MS = 30_000;

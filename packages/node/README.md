@@ -1,8 +1,10 @@
 # @e-pay/node
 
-Official [ePay Business API](https://api.e-pay.et) client for Node.js, Bun, and Deno.
+Official ePay Business API client for Node.js, Bun, and Deno.
 
 Accept payments from every major Ethiopian mobile wallet and bank with one integration.
+
+Full API documentation: <https://docs.epayethiopia.com/>
 
 - **Zero runtime dependencies** — built on `fetch` and `node:crypto`
 - **Typed end to end**, including the webhook payload
@@ -47,15 +49,15 @@ The key prefix picks the environment: `sk_test_…` runs against the sandbox and
 Every option falls back to an environment variable, so the common case is
 `new Epay()`.
 
-| Option           | Environment variable  | Default                   |
-| ---------------- | --------------------- | ------------------------- |
-| `apiKey`         | `EPAY_SECRET_KEY`     | _required_                |
-| `webhookSecret`  | `EPAY_WEBHOOK_SECRET` | —                         |
-| `baseUrl`        | `EPAY_BASE_URL`       | `https://api.e-pay.et/v1` |
-| `timeout`        | —                     | `30000` ms per attempt    |
-| `maxRetries`     | —                     | `2`                       |
-| `defaultHeaders` | —                     | `{}`                      |
-| `fetch`          | —                     | global `fetch`            |
+| Option           | Environment variable  | Default                           |
+| ---------------- | --------------------- | --------------------------------- |
+| `apiKey`         | `EPAY_SECRET_KEY`     | _required_                        |
+| `webhookSecret`  | `EPAY_WEBHOOK_SECRET` | —                                 |
+| `baseUrl`        | `EPAY_BASE_URL`       | `https://api.epayethiopia.com/v1` |
+| `timeout`        | —                     | `30000` ms per attempt            |
+| `maxRetries`     | —                     | `2`                               |
+| `defaultHeaders` | —                     | `{}`                              |
+| `fetch`          | —                     | global `fetch`                    |
 
 ```ts
 const epay = new Epay({

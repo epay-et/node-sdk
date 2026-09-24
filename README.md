@@ -1,6 +1,8 @@
 # node-sdk
 
-Official [ePay Business API](https://api.e-pay.et) SDKs for the JavaScript ecosystem.
+Official ePay Business API SDKs for the JavaScript ecosystem.
+
+Full API documentation: <https://docs.epayethiopia.com/>
 
 | Package                            | What it is                                                                                                                    |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
