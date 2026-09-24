@@ -10,44 +10,38 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The toolchain and the published packages have different Node floors, and
+# conflating them breaks the build:
+#
+#   * pnpm 11 imports node:sqlite, so it needs Node >= 22.13 to even start.
+#   * The suites are TypeScript run directly by `node --test`, which needs the
+#     type-stripping loader (Node >= 22.6).
+#   * The published packages support Node >= 18.
+#
+# So every job that touches pnpm runs on modern Node, and the >= 18 claim is
+# proven separately by installing the packed tarball on each supported runtime.
 jobs:
   test:
-    name: Node ${{ matrix.node }}
+    name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # 18 and 20 are the oldest supported runtimes; 24 is what the test
-        # runner needs, since the suites are TypeScript executed directly.
-        node: [20, 22, 24]
+        node: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check-types
+      - run: pnpm test
 
-      - name: Build
-        run: pnpm build
-
-      - name: Type-check
-        run: pnpm check-types
-
-      # Node's test runner executes the .ts suites via type stripping, which
-      # needs 22.6+. Older runtimes still build and type-check above, proving
-      # the published output compiles for them.
-      - name: Test
-        if: matrix.node >= 22
-        run: pnpm test
-
-  # The VERSION constant rides in the User-Agent, so it must not drift from the
-  # manifest that npm actually publishes.
   versions:
     name: Version consistency
     runs-on: ubuntu-latest
@@ -56,6 +50,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      # The VERSION constant rides in the User-Agent, so it must not drift from
+      # the manifest npm actually publishes.
       - name: package.json matches src/version.ts
         run: |
           MANIFEST=$(node -p "require('./packages/node/package.json').version")
@@ -87,10 +84,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
 
-  # Proves the published tarballs are importable from both module systems,
-  # which the in-repo suites cannot catch on their own.
-  package:
-    name: Package smoke test
+  build:
+    name: Pack
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,31 +94,113 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
       - name: Pack both packages
         run: |
-          pnpm --filter @e-pay/node exec npm pack --pack-destination "$RUNNER_TEMP"
-          pnpm --filter @e-pay/nestjs exec npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/tarballs"
+          pnpm --filter @e-pay/node exec npm pack --pack-destination "$RUNNER_TEMP/tarballs"
+          pnpm --filter @e-pay/nestjs exec npm pack --pack-destination "$RUNNER_TEMP/tarballs"
+          ls -l "$RUNNER_TEMP/tarballs"
 
-      - name: Install the tarball into a clean project and import it
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarballs
+          path: ${{ runner.temp }}/tarballs/*.tgz
+          retention-days: 7
+
+  # Proves the `engines: >=18` claim against the real tarball, on a runtime that
+  # never sees pnpm or the repo's devDependencies.
+  compat:
+    name: Consume on Node ${{ matrix.node }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22, 24]
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: tarballs
+
+      - name: Install @e-pay/node into a clean project
         run: |
-          mkdir -p "$RUNNER_TEMP/consumer" && cd "$RUNNER_TEMP/consumer"
+          mkdir -p consumer && cd consumer
           npm init -y > /dev/null
-          npm install "$RUNNER_TEMP"/e-pay-node-*.tgz > /dev/null
+          npm install ../tarballs/e-pay-node-*.tgz > /dev/null
 
+      - name: CommonJS require
+        working-directory: consumer
+        run: |
           node -e "
-            const { Epay } = require('@e-pay/node');
-            if (new Epay({ apiKey: 'sk_test_x0123456789' }).mode !== 'sandbox') process.exit(1);
-            console.log('CJS require: ok');
+            const { Epay, formatAmount, normalizePhone } = require('@e-pay/node');
+            const c = new Epay({ apiKey: 'sk_test_x0123456789' });
+            if (c.mode !== 'sandbox') throw new Error('mode: ' + c.mode);
+            if (formatAmount('250.5') !== '250.50') throw new Error('formatAmount');
+            if (normalizePhone('0911234567') !== '+251911234567') throw new Error('normalizePhone');
+            console.log('CJS ok on Node ' + process.versions.node);
           "
+
+      - name: ESM import
+        working-directory: consumer
+        run: |
           node --input-type=module -e "
-            import { Epay } from '@e-pay/node';
-            if (new Epay({ apiKey: 'sk_test_x0123456789' }).mode !== 'sandbox') process.exit(1);
-            console.log('ESM import: ok');
+            import { Epay, signWebhookPayload, constructWebhookEvent } from '@e-pay/node';
+            const c = new Epay({ apiKey: 'sk_test_x0123456789' });
+            if (c.mode !== 'sandbox') throw new Error('mode: ' + c.mode);
+
+            const body = JSON.stringify({ event: 'payment.success', reference: 'PAB1' });
+            const sig = 'sha256=' + signWebhookPayload(body, 'secret');
+            if (constructWebhookEvent(body, sig, 'secret').reference !== 'PAB1') {
+              throw new Error('webhook round trip failed');
+            }
+            console.log('ESM ok on Node ' + process.versions.node);
           "
+
+      - name: Subpath exports
+        working-directory: consumer
+        run: |
           node -e "
-            require('@e-pay/node/express'); require('@e-pay/node/fetch'); require('@e-pay/node/webhooks/web');
-            console.log('subpath exports: ok');
+            const express = require('@e-pay/node/express');
+            const fetchMw = require('@e-pay/node/fetch');
+            require('@e-pay/node/webhooks/web');
+            if (typeof express.expressEpayWebhook !== 'function') throw new Error('express subpath');
+            if (typeof fetchMw.createEpayWebhookHandler !== 'function') throw new Error('fetch subpath');
+            console.log('subpath exports ok on Node ' + process.versions.node);
+          "
+
+      # A retried initialize must reuse one idempotency key. On Node 18 the
+      # global WebCrypto is not exposed, so this also exercises the fallback
+      # key generator rather than crashing.
+      - name: Live request path against a stub server
+        working-directory: consumer
+        run: |
+          node -e "
+            const http = require('http');
+            const { Epay } = require('@e-pay/node');
+            const seen = [];
+            const server = http.createServer((req, res) => {
+              seen.push(req.headers['x-idempotency-key']);
+              if (seen.length === 1) { res.writeHead(429, { 'retry-after': '0' }); return res.end('{}'); }
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ reference: 'PAB1', checkoutUrl: 'https://c/1', status: 'success', expiresAt: 'z' }));
+            });
+            server.listen(0, async () => {
+              const epay = new Epay({ apiKey: 'sk_test_x0123456789', baseUrl: 'http://127.0.0.1:' + server.address().port, maxRetries: 2 });
+              const s = await epay.payments.initialize({ amount: 250, currencyCode: 'etb', customerPhone: '0911234567' });
+              if (s.reference !== 'PAB1') throw new Error('bad response');
+              if (seen.length !== 2) throw new Error('expected one retry, got ' + seen.length);
+              if (!seen[0] || seen[0] !== seen[1]) throw new Error('retry changed the idempotency key');
+              console.log('retry + idempotency ok on Node ' + process.versions.node);
+              server.close();
+            });
           "
