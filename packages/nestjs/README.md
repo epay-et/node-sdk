@@ -109,6 +109,28 @@ export class CheckoutService {
 `payments`, `transactions`, `paymentProviders`, `webhooks` — plus `mode`,
 `isSandbox`, and `raw` for the underlying `Epay` instance.
 
+### Charge directly, without a checkout page
+
+```ts
+const charge = await this.epay.payments.directPayment(
+  {
+    amount: order.total,
+    currencyCode: "ETB",
+    customerPhone: order.customerPhone,
+    pspCode: "TELEBIRR",
+    merchantReference: order.id,
+  },
+  { idempotencyKey: order.id },
+);
+// charge.status === "pending": the customer authorizes on their phone, and the
+// outcome arrives at your webhook.
+```
+
+`this.epay.payments.sendSmsLink(…)` texts the customer a checkout link instead,
+and `this.epay.payments.receipt(reference)` returns a receipt for completed,
+failed, and cancelled transactions alike. See the
+[`@e-pay/node` README](https://github.com/epay-et/node-sdk/tree/main/packages/node#direct-payment) for details.
+
 ## Webhooks
 
 Signature verification needs the **raw** request body, so create the app with

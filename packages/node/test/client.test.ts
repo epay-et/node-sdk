@@ -513,39 +513,63 @@ test("payment providers are unwrapped from the data envelope", async () => {
   assert.equal(providers[0]!.providerCode, "telebirr");
 });
 
-test("listEnabled filters out providers the account cannot use", async () => {
-  const { epay, calls } = client([
+const PROVIDERS = {
+  data: [
     {
-      body: {
-        data: [
-          {
-            providerCode: "cbe_birr",
-            providerName: "CBE Birr",
-            providerCategory: "bank",
-            flowCode: "mobile_banking",
-            isEnabled: true,
-          },
-          {
-            providerCode: "awash_bank",
-            providerName: "Awash Bank",
-            providerCategory: "bank",
-            flowCode: "mobile_banking",
-            isEnabled: false,
-          },
-        ],
-      },
+      providerCode: "TELEBIRR",
+      providerName: "TeleBirr",
+      providerCategory: "wallet",
+      flows: [
+        { flowCode: "USSD", isDefault: true, supportsDirectPayment: true },
+        { flowCode: "SMS_OTP", isDefault: false, supportsDirectPayment: false },
+      ],
     },
-  ]);
+    {
+      providerCode: "CBE",
+      providerName: "CBE",
+      providerCategory: "bank",
+      flows: [
+        { flowCode: "QR", isDefault: true, supportsDirectPayment: false },
+      ],
+    },
+  ],
+};
 
-  const enabled = await epay.paymentProviders.listEnabled();
+test("getAll returns providers with their flows grouped", async () => {
+  const { epay, calls } = client([{ body: PROVIDERS }]);
+
+  const providers = await epay.paymentProviders.getAll();
 
   assert.equal(
     calls[0]!.url,
     "https://api.epayethiopia.com/v1/payment-providers",
   );
+  assert.equal(providers.length, 2);
   assert.deepEqual(
-    enabled.map((p) => p.providerCode),
-    ["cbe_birr"],
+    providers[0]!.flows.map((flow) => flow.flowCode),
+    ["USSD", "SMS_OTP"],
+  );
+});
+
+test("listForDirectPayment keeps only direct-payment flows and the providers that have one", async () => {
+  const { epay } = client([{ body: PROVIDERS }]);
+
+  const providers = await epay.paymentProviders.listForDirectPayment();
+
+  assert.deepEqual(
+    providers.map((p) => [p.providerCode, p.flows.map((f) => f.flowCode)]),
+    [["TELEBIRR", ["USSD"]]],
+  );
+});
+
+test("the deprecated listEnabled now returns every available provider", async () => {
+  const { epay } = client([{ body: PROVIDERS }]);
+
+  const providers = await epay.paymentProviders.listEnabled();
+
+  assert.deepEqual(
+    providers.map((p) => p.providerCode),
+    ["TELEBIRR", "CBE"],
   );
 });
 
@@ -568,6 +592,213 @@ test("a missing permission surfaces as a permission error", async () => {
       assert.match((error as Error).message, /get_platform_payment_provider/);
       return true;
     },
+  );
+});
+
+// --- direct payment, SMS link, receipt --------------------------------------
+
+const DIRECT = {
+  reference: "A3BX72KP",
+  status: "pending",
+  chargeAmount: "250.00",
+  feeAmount: "5.00",
+  attempt: {},
+};
+
+test("directPayment posts a normalized body with an idempotency key", async () => {
+  const { epay, calls } = client([{ body: DIRECT }]);
+
+  const charge = await epay.payments.directPayment(
+    {
+      amount: 250,
+      currencyCode: "etb",
+      customerPhone: "0911 234 567",
+      pspCode: " TELEBIRR ",
+      flowCode: "USSD",
+      merchantReference: "order_456",
+    },
+    { idempotencyKey: "order_456" },
+  );
+
+  assert.deepEqual(charge, DIRECT);
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(
+    calls[0]!.url,
+    "https://api.epayethiopia.com/v1/transactions/direct",
+  );
+  assert.equal(calls[0]!.headers["x-idempotency-key"], "order_456");
+  assert.deepEqual(calls[0]!.body as Record<string, unknown>, {
+    amount: "250.00",
+    currencyCode: "ETB",
+    customerPhone: "+251911234567",
+    pspCode: "TELEBIRR",
+    flowCode: "USSD",
+    merchantReference: "order_456",
+  });
+});
+
+test("directPayment omits unset optional fields and generates a key", async () => {
+  const { epay, calls } = client([{ body: DIRECT }]);
+
+  await epay.payments.directPayment({
+    amount: "10",
+    currencyCode: "ETB",
+    customerPhone: "0911234567",
+    pspCode: "AWASH",
+  });
+
+  const body = calls[0]!.body as Record<string, unknown>;
+  assert.deepEqual(Object.keys(body), [
+    "amount",
+    "currencyCode",
+    "customerPhone",
+    "pspCode",
+  ]);
+  assert.ok(calls[0]!.headers["x-idempotency-key"]);
+});
+
+test("directPayment validates locally before spending a request", async () => {
+  const { epay, calls } = client([]);
+
+  for (const pspCode of ["", "   "]) {
+    await assert.rejects(
+      () =>
+        epay.payments.directPayment({
+          amount: "10",
+          currencyCode: "ETB",
+          customerPhone: "0911234567",
+          pspCode,
+        }),
+      EpayValidationError,
+    );
+  }
+  await assert.rejects(
+    () =>
+      epay.payments.directPayment({
+        amount: "0",
+        currencyCode: "ETB",
+        customerPhone: "0911234567",
+        pspCode: "TELEBIRR",
+      }),
+    EpayValidationError,
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("directPayment is retried with the same idempotency key", async () => {
+  const { epay, calls } = client(
+    [{ status: 503, body: {} }, { body: DIRECT }],
+    { maxRetries: 1 },
+  );
+
+  await epay.payments.directPayment({
+    amount: "10",
+    currencyCode: "ETB",
+    customerPhone: "0911234567",
+    pspCode: "TELEBIRR",
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(
+    calls[0]!.headers["x-idempotency-key"],
+    calls[1]!.headers["x-idempotency-key"],
+  );
+});
+
+const SMS_LINK = {
+  message: "Checkout link sent via SMS",
+  checkoutUrl: "https://api.epayethiopia.com/v1/sms/p/ps_live_abc123?sig=x",
+  customerPhone: "+251911234567",
+  amount: "500.00",
+  currencyCode: "ETB",
+};
+
+test("sendSmsLink posts a normalized body", async () => {
+  const { epay, calls } = client([{ body: SMS_LINK }]);
+
+  const link = await epay.payments.sendSmsLink({
+    customerPhone: "0911234567",
+    currencyCode: "etb",
+    amount: 500,
+  });
+
+  assert.deepEqual(link, SMS_LINK);
+  assert.equal(
+    calls[0]!.url,
+    "https://api.epayethiopia.com/v1/transactions/sms-link",
+  );
+  assert.deepEqual(calls[0]!.body as Record<string, unknown>, {
+    customerPhone: "+251911234567",
+    currencyCode: "ETB",
+    amount: "500.00",
+  });
+});
+
+test("sendSmsLink leaves the amount to the customer when none is given", async () => {
+  const { epay, calls } = client([{ body: { ...SMS_LINK, amount: null } }]);
+
+  const link = await epay.payments.sendSmsLink({
+    customerPhone: "0911234567",
+    currencyCode: "ETB",
+  });
+
+  assert.equal(link.amount, null);
+  assert.equal("amount" in (calls[0]!.body as Record<string, unknown>), false);
+});
+
+test("sendSmsLink is never retried, so a customer is never texted twice", async () => {
+  const { epay, calls } = client([{ status: 503, body: {} }], {
+    maxRetries: 2,
+  });
+
+  await assert.rejects(
+    () =>
+      epay.payments.sendSmsLink({
+        customerPhone: "0911234567",
+        currencyCode: "ETB",
+      }),
+    EpayServerError,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("receipt returns any terminal transaction", async () => {
+  const failed = {
+    reference: "A3BX72KP",
+    merchantReference: "order_456",
+    status: "failed",
+    amount: "250.00",
+    chargeAmount: "250.00",
+    feeAmount: null,
+    currencyCode: "ETB",
+    paymentMethod: "TELEBIRR",
+    customer: { name: null, email: null, phone: "+251911234567" },
+    paidAt: null,
+    createdAt: "2026-10-12T09:10:00.000Z",
+  };
+  const { epay, calls } = client([{ body: failed }]);
+
+  const receipt = await epay.payments.receipt("A3BX72KP");
+
+  assert.equal(
+    calls[0]!.url,
+    "https://api.epayethiopia.com/v1/transactions/A3BX72KP/receipt",
+  );
+  assert.equal(receipt.status, "failed");
+  assert.equal(receipt.paidAt, null);
+});
+
+test("receipt reports a pending transaction as a bad request", async () => {
+  const { epay } = client([
+    {
+      status: 400,
+      body: { status: "error", data: { message: "Transaction is pending" } },
+    },
+  ]);
+
+  await assert.rejects(
+    () => epay.payments.receipt("A3BX72KP"),
+    EpayBadRequestError,
   );
 });
 

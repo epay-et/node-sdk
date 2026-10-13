@@ -75,7 +75,7 @@ export interface InitializePaymentParams {
 
 /** Response of `POST /v1/transactions/initialize`. */
 export interface InitializedPayment {
-  /** ePay reference, format `P{8-hex}{yyyymmdd}`. */
+  /** ePay reference, an 8-character code such as `A3BX72KP`. */
   reference: string;
   /** Hosted checkout URL to redirect the customer to. */
   checkoutUrl: string;
@@ -83,6 +83,76 @@ export interface InitializedPayment {
   status: string;
   /** ISO 8601 timestamp at which the checkout session expires. */
   expiresAt: string;
+}
+
+/** Body of `POST /v1/transactions/direct`. */
+export interface DirectPaymentParams {
+  /**
+   * Amount as a positive numeric string with at most 9 integer digits and 2
+   * decimal places. A `number` is accepted and formatted to 2dp for you.
+   */
+  amount: string | number;
+  /** ISO 4217 currency code, e.g. `ETB`. */
+  currencyCode: string;
+  /**
+   * Ethiopian mobile number registered with the provider, e.g.
+   * `+251911234567` or `0911234567`.
+   */
+  customerPhone: string;
+  /**
+   * Provider to charge through, e.g. `TELEBIRR` or `AWASH`. Must be enabled
+   * for your account; see `paymentProviders.listForDirectPayment()`.
+   */
+  pspCode: string;
+  /** Overrides the provider's default flow, e.g. `USSD` or `SMS_OTP`. */
+  flowCode?: string;
+  /** Your own unique reference for this transaction, e.g. an order id. */
+  merchantReference?: string;
+  /** Per-transaction webhook URL; overrides the dashboard-wide URL. */
+  callbackUrl?: string;
+}
+
+/** Response of `POST /v1/transactions/direct`. */
+export interface DirectPayment {
+  /** ePay reference, an 8-character code such as `A3BX72KP`. */
+  reference: string;
+  /** Always `pending`: the outcome arrives by webhook once the customer authorizes. */
+  status: TransactionStatus;
+  /** Total charged to the customer, fees included. */
+  chargeAmount: string;
+  /** Fee deducted from the transaction. */
+  feeAmount: string;
+  /**
+   * Provider-specific session data. Its shape varies by provider; inspect it
+   * only when building a custom authorization UI.
+   */
+  attempt: Record<string, unknown>;
+}
+
+/** Body of `POST /v1/transactions/sms-link`. */
+export interface SmsLinkParams {
+  /** Ethiopian mobile number to text the link to. */
+  customerPhone: string;
+  /** ISO 4217 currency code, e.g. `ETB`. */
+  currencyCode: string;
+  /**
+   * Fixed amount to pre-fill and sign into the link. Omit to let the customer
+   * enter the amount themselves.
+   */
+  amount?: string | number;
+}
+
+/** Response of `POST /v1/transactions/sms-link`. */
+export interface SmsLink {
+  /** Confirmation that the SMS was dispatched. */
+  message: string;
+  /** The signed checkout URL sent to the customer. Valid for 1 hour. */
+  checkoutUrl: string;
+  /** The phone number the SMS was sent to. */
+  customerPhone: string;
+  /** The pre-filled amount, or null when the customer chooses it. */
+  amount: string | null;
+  currencyCode: string;
 }
 
 /** A transaction as returned by retrieve and list. */
@@ -115,6 +185,24 @@ export interface VerifiedPayment {
   paymentMethod: string | null;
   customer: TransactionCustomer;
   paidAt: string;
+  createdAt: string;
+}
+
+/** Response of `GET /v1/transactions/:reference/receipt`. */
+export interface Receipt {
+  reference: string;
+  merchantReference: string | null;
+  /** A terminal status: `completed`, `failed`, or `cancelled`. */
+  status: TransactionStatus;
+  amount: string;
+  /** Total charged to the customer, fees included. */
+  chargeAmount: string;
+  feeAmount: string | null;
+  currencyCode: string | null;
+  paymentMethod: string | null;
+  customer: TransactionCustomer;
+  /** Null for failed and cancelled transactions. */
+  paidAt: string | null;
   createdAt: string;
 }
 
@@ -160,22 +248,31 @@ export interface TransactionTimeline {
 
 /** Compact provider entry from `GET /v1/payment-providers/list`. */
 export interface PaymentProviderItem {
-  /** e.g. `cbe_birr`, `telebirr`. */
+  /** e.g. `TELEBIRR`, `AWASH`. */
   providerCode: string;
   providerName: string | null;
-  /** e.g. `mobile_banking`, `ussd`, `qr`. */
+  /** e.g. `USSD`, `SMS_OTP`. */
   flowCode: string;
 }
 
-/** Full provider entry from `GET /v1/payment-providers`. */
-export interface PaymentProvider extends PaymentProviderItem {
-  /** Common values: `bank`, `mobile_money`. */
+/** A payment flow a provider supports. */
+export interface PaymentProviderFlow {
+  /** e.g. `USSD`, `SMS_OTP`, `IN_APP`. Pass as `flowCode` to a direct payment. */
+  flowCode: string;
+  /** Whether this is the provider's recommended flow. */
+  isDefault: boolean;
+  /** Whether this flow works with `payments.directPayment()`. */
+  supportsDirectPayment: boolean;
+}
+
+/** Provider entry from `GET /v1/payment-providers`, with its flows grouped. */
+export interface PaymentProvider {
+  /** e.g. `TELEBIRR`, `AWASH`. Pass as `pspCode` to a direct payment. */
+  providerCode: string;
+  providerName: string | null;
+  /** Common values: `wallet`, `bank`. */
   providerCategory: string | null;
-  /**
-   * Whether your account has this provider enabled. Disabled providers are
-   * still returned so your UI can show them as unavailable.
-   */
-  isEnabled: boolean;
+  flows: PaymentProviderFlow[];
 }
 
 /** Envelope used by both payment-provider endpoints. */
@@ -199,4 +296,12 @@ export interface WebhookEvent {
   /** Null for every non-success event. */
   paidAt: string | null;
   createdAt: string;
+  /** The customer's phone number, on direct payment events. */
+  customerPhone?: string;
+  /** The provider charged, on direct payment events, e.g. `TELEBIRR`. */
+  pspCode?: string;
+  /** When the event occurred, ISO 8601. */
+  occurredAt?: string;
+  /** Why the payment failed, on `payment.failed`. */
+  reason?: string;
 }

@@ -121,6 +121,69 @@ Only `pending` and `processing` transactions can be cancelled, and cancellation
 is irreversible. This call is never retried automatically, because the endpoint
 takes no idempotency key.
 
+### Receipt for any outcome
+
+```ts
+const receipt = await epay.payments.receipt(reference);
+// receipt.status is 'completed', 'failed', or 'cancelled'
+```
+
+Unlike `verify`, `receipt` accepts failed and cancelled transactions too, which
+suits records, audits, and customer-facing receipts. It still rejects a
+transaction that is `pending` or `processing` with `EpayBadRequestError`.
+
+## Direct payment
+
+Charge a customer's wallet or bank account without redirecting them anywhere.
+ePay pushes an authorization prompt (USSD menu, SMS OTP, or in-app notification)
+to their phone:
+
+```ts
+const charge = await epay.payments.directPayment(
+  {
+    amount: "250.00",
+    currencyCode: "ETB",
+    customerPhone: "0911234567",
+    pspCode: "TELEBIRR",
+    merchantReference: "order_456",
+  },
+  { idempotencyKey: "order_456" },
+);
+// charge.status === 'pending'; store charge.reference
+```
+
+The call resolves as soon as the prompt is sent. The outcome arrives as a
+`payment.success` or `payment.failed` webhook once the customer approves or
+declines, so fulfil the order from your webhook handler, not from this response.
+
+Choose `pspCode`, and optionally `flowCode`, from the providers that support it:
+
+```ts
+const providers = await epay.paymentProviders.listForDirectPayment();
+// [{ providerCode: 'TELEBIRR', flows: [{ flowCode: 'USSD', isDefault: true, ... }] }]
+```
+
+Like `initialize`, a direct payment is retried safely with one idempotency key.
+Pass your order id so a double-submitted form cannot charge twice. Direct
+charges must be enabled for your account; contact ePay support.
+
+## SMS payment link
+
+Text the customer a link to the hosted checkout page, for invoices, bills, and
+customers who are not present:
+
+```ts
+const link = await epay.payments.sendSmsLink({
+  customerPhone: "0911234567",
+  currencyCode: "ETB",
+  amount: "500.00", // omit to let the customer enter the amount
+});
+```
+
+An amount is signed into the link, so it cannot be tampered with. The link
+expires after 1 hour. This call is never retried automatically, so a customer
+is never texted twice.
+
 ## Transactions
 
 ```ts
@@ -167,13 +230,19 @@ for await (const t of epay.transactions.autoPaginate({ status: "failed" })) {
 ## Payment providers
 
 ```ts
+await epay.paymentProviders.getAll(); // every provider, with its flows
+await epay.paymentProviders.listForDirectPayment(); // only what directPayment accepts
 await epay.paymentProviders.list(); // compact, for dropdowns
-await epay.paymentProviders.getAll(); // with category and isEnabled
-await epay.paymentProviders.listEnabled(); // only what you can route to today
 ```
 
-Both endpoints are mode-aware and permission-gated: `list` needs
-`list_platform_payment_provider`, `getAll` needs `get_platform_payment_provider`.
+Each provider lists its `flows`. A flow's `isDefault` marks the one to
+pre-select, and `supportsDirectPayment` marks the ones `directPayment` accepts.
+
+The endpoints are mode-aware and permission-gated: `getAll` needs
+`get_platform_payment_provider`, and `list` needs `list_platform_payment_provider`.
+
+`listEnabled()` is deprecated. The API no longer reports a per-provider enabled
+state, so it now returns the same list as `getAll()`.
 
 ## Webhooks
 
@@ -260,6 +329,9 @@ switch (event.event) {
     break;
 }
 ```
+
+Direct payment events also carry `pspCode`, `customerPhone`, and `occurredAt`, and
+`payment.failed` carries a `reason`.
 
 ePay retries anything that is not a `2xx` within 10 seconds, up to 5 attempts,
 so keep the handler fast and make it idempotent — deduplicate on

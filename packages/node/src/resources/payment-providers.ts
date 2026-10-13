@@ -34,10 +34,8 @@ export class PaymentProviders {
   }
 
   /**
-   * Returns every provider on the account with its category and enabled state.
-   *
-   * Disabled providers are included so your UI can show them as unavailable
-   * rather than having them silently disappear.
+   * Returns every provider available to the account, each with the payment
+   * flows it supports.
    *
    * Requires the `get_platform_payment_provider` permission.
    *
@@ -51,9 +49,32 @@ export class PaymentProviders {
     return response.data?.data ?? [];
   }
 
-  /** Returns only the providers your account can currently route payments through. */
-  async listEnabled(): Promise<PaymentProvider[]> {
+  /**
+   * Returns the providers that can take a direct payment, keeping only their
+   * direct-payment flows. Providers with no such flow are left out.
+   *
+   * Use it to build the selector for `payments.directPayment()`: pass a
+   * provider's `providerCode` as `pspCode`, and pre-select the flow whose
+   * `isDefault` is true.
+   */
+  async listForDirectPayment(): Promise<PaymentProvider[]> {
     const providers = await this.getAll();
-    return providers.filter((provider) => provider.isEnabled);
+    return providers
+      .map((provider) => ({
+        ...provider,
+        flows: (provider.flows ?? []).filter(
+          (flow) => flow.supportsDirectPayment,
+        ),
+      }))
+      .filter((provider) => provider.flows.length > 0);
+  }
+
+  /**
+   * @deprecated The API no longer reports a per-provider enabled state: every
+   * provider {@link getAll} returns is available to the account. This now
+   * returns the same list, and will be removed in a future version.
+   */
+  async listEnabled(): Promise<PaymentProvider[]> {
+    return this.getAll();
   }
 }

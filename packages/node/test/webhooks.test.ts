@@ -118,6 +118,26 @@ test("constructWebhookEvent returns the parsed event on a valid signature", () =
   assert.equal(isKnownWebhookEvent(event), true);
 });
 
+test("direct payment events carry their extra fields", () => {
+  const body = JSON.stringify({
+    event: "payment.success",
+    reference: "A3BX72KP",
+    merchantReference: "order_456",
+    amount: "250.00",
+    currency: "ETB",
+    customerPhone: "+251911234567",
+    pspCode: "TELEBIRR",
+    occurredAt: "2026-10-12T09:15:00.000Z",
+  });
+  const event = constructWebhookEvent(
+    body,
+    `sha256=${signWebhookPayload(body, SECRET)}`,
+    SECRET,
+  );
+  assert.equal(event.pspCode, "TELEBIRR");
+  assert.equal(event.occurredAt, "2026-10-12T09:15:00.000Z");
+});
+
 test("constructWebhookEvent fails closed", () => {
   assert.throws(
     () => constructWebhookEvent(PAYLOAD, undefined, SECRET),
