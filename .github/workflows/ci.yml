@@ -100,10 +100,24 @@ jobs:
 
       - name: Pack both packages
         run: |
-          mkdir -p "$RUNNER_TEMP/tarballs"
-          pnpm --filter @e-pay/node exec npm pack --pack-destination "$RUNNER_TEMP/tarballs"
-          pnpm --filter @e-pay/nestjs exec npm pack --pack-destination "$RUNNER_TEMP/tarballs"
-          ls -l "$RUNNER_TEMP/tarballs"
+          DEST="$RUNNER_TEMP/tarballs"
+          mkdir -p "$DEST"
+          pnpm --filter @e-pay/node pack --pack-destination "$DEST"
+          pnpm --filter @e-pay/nestjs pack --pack-destination "$DEST"
+          ls -l "$DEST"
+
+          # pnpm rewrites the workspace:^ dependency on @e-pay/node to a real
+          # range only when it packs; npm pack and npm publish copy it
+          # verbatim, which npm then refuses to install. 0.1.0 through 0.2.0
+          # of @e-pay/nestjs shipped that way.
+          for tgz in "$DEST"/*.tgz; do
+            if tar -xzOf "$tgz" package/package.json | grep -q '"workspace:'; then
+              echo "::error::$(basename "$tgz") still declares a workspace: dependency"
+              tar -xzOf "$tgz" package/package.json | grep '"workspace:'
+              exit 1
+            fi
+          done
+          echo "No workspace: protocol left in the packed manifests"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -176,6 +190,21 @@ jobs:
             if (typeof express.expressEpayWebhook !== 'function') throw new Error('express subpath');
             if (typeof fetchMw.createEpayWebhookHandler !== 'function') throw new Error('fetch subpath');
             console.log('subpath exports ok on Node ' + process.versions.node);
+          "
+
+      # Installs the Nest package exactly as a user would, which is what
+      # proves its dependency on @e-pay/node resolves. Nest 11 needs Node 20.
+      - name: Install and load @e-pay/nestjs
+        if: matrix.node >= 20
+        working-directory: consumer
+        run: |
+          npm install ../tarballs/e-pay-node-*.tgz ../tarballs/e-pay-nestjs-*.tgz > /dev/null
+          node -e "
+            require('reflect-metadata');
+            const nest = require('@e-pay/nestjs');
+            if (typeof nest.EpayModule.forRoot !== 'function') throw new Error('EpayModule.forRoot');
+            if (typeof nest.EpayService !== 'function') throw new Error('EpayService');
+            console.log('@e-pay/nestjs loads on Node ' + process.versions.node);
           "
 
       # A retried initialize must reuse one idempotency key. On Node 18 the

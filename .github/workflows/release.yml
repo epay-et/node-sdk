@@ -92,23 +92,45 @@ jobs:
             exit 1
           }
 
+      # Pack with pnpm, then publish those exact tarballs with npm, which
+      # keeps provenance. Publishing a package directory with npm would ship
+      # the raw workspace:^ dependency instead.
+      - name: Pack both packages
+        run: |
+          DEST="$RUNNER_TEMP/tarballs"
+          mkdir -p "$DEST"
+          pnpm --filter @e-pay/node pack --pack-destination "$DEST"
+          pnpm --filter @e-pay/nestjs pack --pack-destination "$DEST"
+          ls -l "$DEST"
+
+          # pnpm rewrites the workspace:^ dependency on @e-pay/node to a real
+          # range only when it packs; npm pack and npm publish copy it
+          # verbatim, which npm then refuses to install. 0.1.0 through 0.2.0
+          # of @e-pay/nestjs shipped that way.
+          for tgz in "$DEST"/*.tgz; do
+            if tar -xzOf "$tgz" package/package.json | grep -q '"workspace:'; then
+              echo "::error::$(basename "$tgz") still declares a workspace: dependency"
+              tar -xzOf "$tgz" package/package.json | grep '"workspace:'
+              exit 1
+            fi
+          done
+          echo "No workspace: protocol left in the packed manifests"
+
       # @e-pay/nestjs depends on @e-pay/node, so the core must land first.
       - name: Publish @e-pay/node
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public --provenance
-        working-directory: packages/node
+        run: npm publish "$RUNNER_TEMP"/tarballs/e-pay-node-*.tgz --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @e-pay/nestjs
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public --provenance
-        working-directory: packages/nestjs
+        run: npm publish "$RUNNER_TEMP"/tarballs/e-pay-nestjs-*.tgz --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Dry run
         if: ${{ inputs.dry_run }}
         run: |
-          (cd packages/node && npm publish --access public --dry-run)
-          (cd packages/nestjs && npm publish --access public --dry-run)
+          npm publish "$RUNNER_TEMP"/tarballs/e-pay-node-*.tgz --access public --dry-run
+          npm publish "$RUNNER_TEMP"/tarballs/e-pay-nestjs-*.tgz --access public --dry-run
